@@ -91,7 +91,19 @@ function installPackage(name, version) {
 
   const output = execFileSync(
     "npm",
-    ["pack", `${name}@${version}`, "--pack-destination", packagesDir, "--registry", registry],
+    [
+      "pack",
+      `${name}@${version}`,
+      "--pack-destination",
+      packagesDir,
+      "--registry",
+      registry,
+      // The packages are cached, so a slow or unreachable registry does not
+      // stop the build.
+      "--prefer-offline",
+      "--no-audit",
+      "--no-fund",
+    ],
     { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
   ).trim();
   const tarball = path.join(packagesDir, output.split("\n").pop());

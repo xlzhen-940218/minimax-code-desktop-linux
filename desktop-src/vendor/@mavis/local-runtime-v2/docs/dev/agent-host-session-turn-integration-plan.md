@@ -478,7 +478,7 @@ feat(local-runtime-v2): cut over conversation runtime
   owner；Cron 已在 Commit 5 直接使用 v2 SessionSystem/TurnSystem；
 - 启动失败、正常 shutdown、并发 send/steer、Queue single-item
   dispatch、abort、resume、compaction、restart recovery 进入 integration/E2E；
-- 更新 Behavior Spec、owner README、OpenWiki、changelog 和 MR 描述。
+- 更新 Behavior Spec、owner README、changelog 和 MR 描述。
 
 本 commit 不自动 merge MR。CI、Code Review 和要求的 Test Agent 全部 PASS 后，只通知用户确认。
 

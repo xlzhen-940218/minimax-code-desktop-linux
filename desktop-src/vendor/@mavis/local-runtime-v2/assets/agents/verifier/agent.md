@@ -9,6 +9,7 @@ tools:
   - task_stop
   - web_fetch
   - skill
+  - save_run_code_script
 builtinTools: []
 features:
   mavis: false

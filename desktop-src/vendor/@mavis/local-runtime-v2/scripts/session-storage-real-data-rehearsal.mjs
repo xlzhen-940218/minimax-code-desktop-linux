@@ -21,17 +21,17 @@ const NON_BUSINESS_SNAPSHOT_TABLES = new Set([
 const LEGACY_V1_EXPECTED_PENDING_VERSIONS = Object.freeze([
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28,
   29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
-  53, 54,
+  53, 54, 55, 62, 63, 64, 65,
 ]);
 const FINAL_EXPECTED_MIGRATION_HISTORY = Object.freeze([
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28,
   29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
-  53, 54,
+  53, 54, 55, 62, 63, 64, 65,
 ]);
 const FINAL_FOREIGN_M0019_MIGRATION_HISTORY = Object.freeze([
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
   28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
-  52, 53, 54,
+  52, 53, 54, 55, 62, 63, 64, 65,
 ]);
 const SUPPORTED_V2_BASELINE_HISTORIES = Object.freeze([
   Object.freeze([1, 2, 3, 4]),
@@ -1380,6 +1380,10 @@ export async function runStepwiseRehearsal({ sourceDataDir, production, captureC
     const goalLimitsMigration = requireMigration(byVersion, 52);
     const projectDisplayNameMigration = requireMigration(byVersion, 53);
     const pptPreviewMigration = requireMigration(byVersion, 54);
+    const miniAppLaunchpadMigration = requireMigration(byVersion, 62);
+    const hiddenSessionPurposeIndexMigration = requireMigration(byVersion, 63);
+    const sessionAutoResumeMigration = requireMigration(byVersion, 64);
+    const cronScheduledForMigration = requireMigration(byVersion, 65);
 
     production.runMigrations(client.rawDb, [pluginMigration]);
 
@@ -1463,6 +1467,11 @@ export async function runStepwiseRehearsal({ sourceDataDir, production, captureC
     production.runMigrations(client.rawDb, [goalLimitsMigration]);
     production.runMigrations(client.rawDb, [projectDisplayNameMigration]);
     production.runMigrations(client.rawDb, [pptPreviewMigration]);
+    production.runMigrations(client.rawDb, [requireMigration(byVersion, 55)]);
+    production.runMigrations(client.rawDb, [miniAppLaunchpadMigration]);
+    production.runMigrations(client.rawDb, [hiddenSessionPurposeIndexMigration]);
+    production.runMigrations(client.rawDb, [sessionAutoResumeMigration]);
+    production.runMigrations(client.rawDb, [cronScheduledForMigration]);
     production.assertSchemaConsistent(client.rawDb);
     const migrationCore = captureSessionMigrationCoreSnapshot(client.rawDb);
 
@@ -1514,8 +1523,15 @@ export async function runStepwiseRehearsal({ sourceDataDir, production, captureC
         48: 'PASS',
         49: 'PASS',
         50: 'PASS',
+        51: 'PASS',
         52: 'PASS',
         53: 'PASS',
+        54: 'PASS',
+        55: 'PASS',
+        62: 'PASS',
+        63: 'PASS',
+        64: 'PASS',
+        65: 'PASS',
       },
       finalDigest: captureBusinessLogicalSnapshot(client.rawDb).digest,
       sessionStorageDigest: captureSessionStorageLogicalSnapshot(client.rawDb).digest,

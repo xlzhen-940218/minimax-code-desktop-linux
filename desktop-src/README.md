@@ -10,7 +10,7 @@ or download a `.deb` from [Releases](https://github.com/xlzhen-940218/minimax-co
 
 ## Status
 
-Verified on Debian 13, arm64, with app version 3.1.13 and Electron 42.11.16. The
+Verified on Debian 13, arm64, with app version 3.1.16 and Electron 42.11.16. The
 tree also supports x64, but that combination has not been run here.
 
 The app is unofficial and not published or supported by MiniMax.
@@ -91,6 +91,10 @@ a rerun of `scripts/setup.sh`.
 
 ## What was changed for Linux
 
+- The tree is refreshed from the official build with
+  `desktop/scripts/sync-desktop-src.mjs`, which copies the renderer bundle, the
+  runtime resources and the first party packages out of the extracted
+  application and rewrites the manifests.
 - Dependencies that were `workspace:*` in the original monorepo point at
   `vendor/` through `file:` references; `package.json` at the top of this
   directory makes them npm workspaces, so one install resolves both the app and

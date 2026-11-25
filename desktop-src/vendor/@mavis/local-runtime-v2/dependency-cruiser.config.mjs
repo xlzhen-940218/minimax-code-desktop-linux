@@ -14,6 +14,47 @@ const v1RuntimeResolvedBoundaryPaths = [
   ...v1RuntimeWorkspaceImplementationPaths,
 ];
 
+/**
+ * Edges that already broke the Bunny boundary rules when they landed. Only these pass, so the
+ * list can only shrink; batch 2 of the Bunny architecture review removes them.
+ */
+const bunnyBoundaryKnownViolations = Object.entries({
+  'coordination-domain-no-bunny-service': [
+    'src/service/assignment/contracts.ts -> src/service/bunny/index.ts',
+    'src/service/assignment/execution-reminder.ts -> src/service/bunny/index.ts',
+    'src/service/assignment/orchestration/assignment.service.ts -> src/service/bunny/index.ts',
+    'src/service/assignment/orchestration/report.service.ts -> src/service/bunny/index.ts',
+    'src/service/assignment/orchestration/snapshot.service.ts -> src/service/bunny/index.ts',
+    'src/service/assignment/snapshot-reminder.ts -> src/service/bunny/index.ts',
+    'src/service/assignment/state/assignment-state-view.ts -> src/service/bunny/index.ts',
+  ],
+  'services-via-sibling-index': [
+    'src/service/agent/storage/canonical-agent-config.ts -> src/service/model-system/resolution/model-key.ts',
+    'src/service/assignment/snapshot-reminder.ts -> src/service/session-system/shared/user-message-id.ts',
+    'src/service/bunny/memory/contracts.ts -> src/service/memory-system/adapters/consolidation-workdir-tools.ts',
+    'src/service/bunny/memory/memory.service.ts -> src/service/memory-system/execution/contracts.ts',
+    'src/service/bunny/memory/session-source.ts -> src/service/memory-system/secret-redactor.ts',
+    'src/service/bunny/memory/workdir-tools.ts -> src/service/memory-system/adapters/consolidation-workdir-tools.ts',
+    'src/service/miniapp/agent/gateway.ts -> src/service/channel-system/settle.ts',
+    'src/service/miniapp/agent/session-ports/when-busy.ts -> src/service/channel-system/settle.ts',
+    'src/service/miniapp/process/host-connector/host-connector-agent.ts -> src/service/channel-system/settle.ts',
+    'src/service/plugin-system/plugin/package/agent/accept.ts -> src/service/agent/storage/canonical-agent-config.ts',
+    'src/service/plugin-system/plugin/package/agent/compatible.ts -> src/service/agent/storage/canonical-agent-config.ts',
+    'src/service/plugin-system/plugin/package/agent/minimax.ts -> src/service/agent/storage/canonical-agent-config.ts',
+    'src/service/session-system/sessions/lifecycle/backfill-diagnostics.ts -> src/service/agent/errors.ts',
+    'src/service/turn-system/execution/steering/side-message/delivery.ts -> src/service/session-system/shared/user-message-id.ts',
+    // Brought in by syncing the integration branch at 616d0c1a30 (its preview_train merge
+    // 6246ac9302, from the PPT preview work); tightened in batch 3.
+    'src/service/turn-system/execution/model-text-completion.ts -> src/service/session-system/sessions/title/title-model-completion.ts',
+    'src/service/turn-system/turn-submission.service.ts -> src/service/session-system/shared/user-message-id.ts',
+  ],
+}).flatMap(([name, edges]) =>
+  edges.map((edge) => {
+    const [from, to] = edge.split(' -> ');
+    return { type: 'dependency', from, to, rule: { severity: 'error', name } };
+  }),
+);
+
 /** @type {import('dependency-cruiser').IConfiguration} */
 export default {
   forbidden: [
@@ -50,6 +91,58 @@ export default {
       },
       to: {
         path: String.raw`(?:^|/)src/service/[^/]+/(?!index\.ts$)`,
+      },
+    },
+    {
+      name: 'harness-owners-no-coordination-services',
+      comment:
+        'Generic owners expose neutral extension points; Bunny, assignment and working-state plug into them, never the other way round.',
+      severity: 'error',
+      from: {
+        path: String.raw`(?:^|/)src/service/(?:turn-system|session-system|agent|cron|memory-system)/`,
+        pathNot: String.raw`\.test\.ts$`,
+      },
+      to: { path: String.raw`(?:^|/)src/service/(?:bunny|assignment|working-state)/` },
+    },
+    {
+      name: 'coordination-domain-no-bunny-service',
+      comment:
+        'Assignment and working-state are the coordination domain Bunny uses; they must not depend on the Bunny product service.',
+      severity: 'error',
+      from: {
+        path: String.raw`(?:^|/)src/service/(?:assignment|working-state)/`,
+        pathNot: String.raw`\.test\.ts$`,
+      },
+      to: { path: String.raw`(?:^|/)src/service/bunny/` },
+    },
+    {
+      name: 'coordinator-text-leaf',
+      comment:
+        "The coordinator's runtime text depends only on itself and shared packages, so the owners that write it and the generic owners that read it back import it without reaching Bunny code.",
+      severity: 'error',
+      from: {
+        path: String.raw`(?:^|/)src/service/coordinator-text/`,
+        pathNot: String.raw`\.test\.ts$`,
+      },
+      to: {
+        pathNot: [
+          String.raw`(?:^|/)src/service/coordinator-text/`,
+          String.raw`(?:^|/)node_modules/@mavis/shared(?:/|$)`,
+        ],
+      },
+    },
+    {
+      name: 'services-via-sibling-index',
+      comment:
+        'A service reaches another service only through its root index barrel, like every other consumer.',
+      severity: 'error',
+      from: {
+        path: String.raw`(?:^|/)src/service/([^/]+)/`,
+        pathNot: String.raw`\.test\.ts$`,
+      },
+      to: {
+        path: String.raw`(?:^|/)src/service/[^/]+/(?!index\.ts$)`,
+        pathNot: String.raw`(?:^|/)src/service/$1/`,
       },
     },
     {
@@ -163,7 +256,7 @@ export default {
           String.raw`(?:^|/)src/service/turn-system/agent-host/history/incremental-sha256\.ts$`,
           String.raw`(?:^|/)src/service/turn-system/agent-host/history/semantic-identity\.ts$`,
           String.raw`\.test\.ts$`,
-          String.raw`(?:^|/)src/service/turn-system/agent-host/(?:assembly/(?:local-turn-(?:tool|plugin|payload-transform)|messages-file-api-patcher\.ts$)|preparation/|runner/|tools/|native-production-dependencies\.ts$)`,
+          String.raw`(?:^|/)src/service/turn-system/agent-host/(?:assembly/(?:local-turn-(?:tool|plugin)|payload/(?:local-turn-payload-transform|messages-file-api-patcher\.ts$))|preparation/|runner/|tools/|native-production-dependencies\.ts$)`,
         ],
       },
       to: {
@@ -175,6 +268,8 @@ export default {
           String.raw`(?:^|/)node_modules/@mavis/plugin-hooks(?:/|$)`,
           String.raw`(?:^|/)node_modules/@mavis/conversation-contract/src/index\.ts$`,
           String.raw`(?:^|/)node_modules/@mavis/shared/src/keyed-operation-lane\.ts$`,
+          // The metric registry: typed metric definitions and reporting, platform neutral.
+          String.raw`(?:^|/)node_modules/@mavis/shared/src/local-runtime-logging/metric-registry\.ts$`,
         ],
       },
     },
@@ -209,7 +304,7 @@ export default {
         'V2 AgentHost concrete adapters may use Plugin Hooks, the SessionSystem/content-safety public entrypoints, model system, and exact platform libraries; product owners still enter through narrow ports.',
       severity: 'error',
       from: {
-        path: String.raw`(?:^|/)src/service/turn-system/agent-host/(?:assembly/(?:local-turn-(?:tool|plugin|payload-transform)|messages-file-api-patcher\.ts$)|preparation/|runner/|tools/|native-production-dependencies\.ts$)`,
+        path: String.raw`(?:^|/)src/service/turn-system/agent-host/(?:assembly/(?:local-turn-(?:tool|plugin)|payload/(?:local-turn-payload-transform|messages-file-api-patcher\.ts$))|preparation/|runner/|tools/|native-production-dependencies\.ts$)`,
         pathNot: [
           String.raw`\.test\.ts$`,
           String.raw`(?:^|/)src/service/turn-system/agent-host/runner/ptc/`,
@@ -234,7 +329,10 @@ export default {
       severity: 'error',
       from: {
         path: String.raw`(?:^|/)src/service/turn-system/agent-host/runner/ptc/`,
-        pathNot: String.raw`\.test\.ts$`,
+        pathNot: [
+          String.raw`\.test\.ts$`,
+          String.raw`(?:^|/)src/service/turn-system/agent-host/runner/ptc/script/`,
+        ],
       },
       to: {
         pathNot: [
@@ -244,6 +342,22 @@ export default {
           String.raw`(?:^|/)node_modules/@earendil-works/pi-ai(?:/|$)`,
           String.raw`(?:^|/)node_modules/quickjs-emscripten(?:/|$)`,
           String.raw`^(?:node:)?(?:worker_threads|path|url)$`,
+        ],
+      },
+    },
+    {
+      name: 'agent-host-ptc-script-loader-only',
+      comment:
+        'PTC 脚本加载器是 runner/ptc 唯一读文件的地方：它随打包的 QuickJS Worker 从 app.asar.unpacked 加载，只能用 node: 内置，所以这里单独放行 fs / crypto / path。',
+      severity: 'error',
+      from: {
+        path: String.raw`(?:^|/)src/service/turn-system/agent-host/runner/ptc/script/`,
+        pathNot: String.raw`\.test\.ts$`,
+      },
+      to: {
+        pathNot: [
+          String.raw`(?:^|/)src/service/turn-system/agent-host/`,
+          String.raw`^(?:node:)?(?:crypto|fs|path)$`,
         ],
       },
     },
@@ -260,11 +374,25 @@ export default {
         pathNot: [
           String.raw`(?:^|/)src/service/turn-system/compaction/`,
           String.raw`(?:^|/)src/service/turn-system/agent-host/contracts\.ts$`,
+          String.raw`(?:^|/)src/service/coordinator-text/index\.ts$`,
           String.raw`(?:^|/)node_modules/@earendil-works/pi-(?:agent-core|ai|coding-agent)(?:/|$)`,
           String.raw`(?:^|/)node_modules/@mavis/(?:agent-core|context-manager|goal)(?:/|$)`,
           String.raw`^(?:node:)?(?:buffer|crypto)$`,
+          // The metric registry: typed metric definitions and reporting, platform neutral.
+          String.raw`(?:^|/)node_modules/@mavis/shared/src/local-runtime-logging/metric-registry\.ts$`,
         ],
       },
+    },
+    {
+      name: 'compaction-coordinator-text-segment-only',
+      comment:
+        "Only the coordinator's segment compaction reads the coordinator runtime text; the shared compaction algorithm stays neutral.",
+      severity: 'error',
+      from: {
+        path: String.raw`(?:^|/)src/service/turn-system/compaction/(?!segment/)`,
+        pathNot: String.raw`\.test\.ts$`,
+      },
+      to: { path: String.raw`(?:^|/)src/service/coordinator-text/` },
     },
     {
       name: 'event-bus-zero-production-dependencies',
@@ -468,6 +596,8 @@ export default {
           String.raw`(?:^|/)node_modules/@mavis/shared/src/index\.ts$`,
           String.raw`(?:^|/)node_modules/@mavis/thrift-gen/src/generated/desktop-service/types\.ts$`,
           String.raw`(?:^|/)node_modules/@mavis/thrift-gen/src/generated/desktop-service/client\.ts$`,
+          // The metric registry: typed metric definitions and reporting, platform neutral.
+          String.raw`(?:^|/)node_modules/@mavis/shared/src/local-runtime-logging/metric-registry\.ts$`,
         ],
       },
     },
@@ -704,6 +834,7 @@ export default {
     },
   ],
   options: {
+    knownViolations: bunnyBoundaryKnownViolations,
     doNotFollow: {
       // Keep validating the direct v2 -> v1 edge, but do not apply v2 rules inside the v1 graph.
       path: v1RuntimeResolvedBoundaryPaths,

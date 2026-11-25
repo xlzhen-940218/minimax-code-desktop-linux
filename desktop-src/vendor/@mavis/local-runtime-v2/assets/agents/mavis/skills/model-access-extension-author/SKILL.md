@@ -83,7 +83,6 @@ The two references are appended below this Skill when it is loaded:
 | --- | --- | --- |
 | `invalid_package` | Manifest, layout or icon invalid | Compare with package-layout.md; icons must be PNG/JPEG/WebP ≤ 1 MiB |
 | `dependency_unsupported` | Import of a bare package or computed import | Inline the code or bundle it into `.mjs` files |
-| `package_name_reserved` | Name starts with `@mavis/` | Use your own scope, e.g. `@local/<vendor>` |
 | `package_name_taken` | An official package has this name, or `name` changed during a dev session | Use your own `name` and keep it stable |
 | `unsupported_host_version` | `engines.desktop` above this app | Lower the floor or update the app |
 | `activation_failed` / `invalid_handlers` | Module threw or handlers do not match the manifest | Every declared provider/source entry needs exactly the declared handlers |

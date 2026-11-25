@@ -27,6 +27,7 @@ const COVERAGE_EXCLUDED_FILES = new Set([
   `${SOURCE_PREFIX}http/routing/contracts.gen.ts`,
   // Type-only contracts emit no runtime statements for V8 to instrument.
   `${SOURCE_PREFIX}service/matrix/contracts.ts`,
+  `${SOURCE_PREFIX}service/plugin-system/plugin/marketplace/contracts.ts`,
   `${SOURCE_PREFIX}service/turn-system/agent-host/contracts.ts`,
   `${SOURCE_PREFIX}service/turn-system/agent-host/execution/contracts.ts`,
   `${SOURCE_PREFIX}service/turn-system/agent-host/history/contracts.ts`,

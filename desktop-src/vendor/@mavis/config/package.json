@@ -15,10 +15,20 @@
       "import": "./dist/data-dir.js",
       "default": "./dist/data-dir.js"
     },
+    "./model-availability": {
+      "types": "./src/model-availability.ts",
+      "import": "./dist/model-availability.js",
+      "default": "./dist/model-availability.js"
+    },
     "./sandbox-settings": {
       "types": "./src/sandbox-settings.ts",
       "import": "./dist/sandbox-settings.js",
       "default": "./dist/sandbox-settings.js"
+    },
+    "./ptc-default-config": {
+      "types": "./src/ptc-default-config.ts",
+      "import": "./dist/ptc-default-config.js",
+      "default": "./dist/ptc-default-config.js"
     }
   },
   "dependencies": {

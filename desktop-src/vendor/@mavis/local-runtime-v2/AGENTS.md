@@ -73,6 +73,50 @@
   生产构建明确排除的 `__dev__/`。即将删除的兼容层添加 `@deprecated` 并写明删除条件。
 - 完整规则和理由见 `.harness/docs/adr/local-runtime-v2-service-layout.md`。
 
+## Tests
+
+- 测试结果不能取决于机器忙不忙。CI runner 经常超卖，72 小时里同一提交重试才通过的 Runtime 失败有 88% 是超时。
+  根目录 `.eslintrc.js` 的 `LOCAL_RUNTIME_V2_TEST_RESTRICTED_SYNTAX` 拒绝下面这些写法，`scripts/test/local-runtime-v2-test-lint.test.mjs`
+  逐条验证规则本身。在包目录运行的 `lint`、`lint:ci` 和 `lint:files` 都检查 `src/**/test/**`，根目录 `.eslintignore` 的 `**/test/**`
+  以前把它们漏掉了。根目录的 `pnpm lint` 仍然跳过所有 test 目录，改 Runtime 测试时要在包目录跑。
+- 子进程里不用 tsx 或 ts-node 现场编译 TypeScript（包括 `tsx/esm/api` 的 `register()`），每次起进程都要重新编译整张模块图，
+  安静的机器上就要 5-10 秒。逻辑能在进程内测就在进程内测；必须真起进程时，用 `test/helpers/compiled-entry.ts` 把入口编译
+  一次，再用普通 node 起 JavaScript。
+- 不用 `spawnSync` / `execSync` / `execFileSync`，子进程跑多久，Vitest worker 的事件循环就冻结多久。改用
+  `test/helpers/run-command.ts` 的 `runCommand` 或 `runCommandOrThrow`。
+- 时限一律经过 `test/helpers/time-budget.ts`。等待用其中的 `waitFor` / `waitUntil`，不直接用 `vi.waitFor` /
+  `vi.waitUntil`；用例、hook 和 `AbortSignal.timeout` 的时限包一层 `scaledTimeout()`，`expect.poll` 和自定义包装函数的 `timeout`
+  选项也一样。CI 设置
+  `MAVIS_TEST_TIME_SCALE`，按机器放大这些时限，全局 `testTimeout` / `hookTimeout` 同样会放大。`time-budget.ts` 依赖
+  vitest，子进程入口和它引用的 helper 不能 import 它。
+- 不按固定时长等待（`setTimeout` / `setInterval` 带非零延迟，`node:timers/promises` 的 `setTimeout`），也不断言实际耗时。
+  直接写 `expect(Date.now() - start)` 算耗时断言，先把 `Date.now() - start` 存进变量、属性或返回值再断言也算。等条件用
+  `waitFor`，等某一步用 deferred。要断言某件事还没发生，就用 gate 挡住它，用 `test/helpers/time-budget.ts` 的 `drainEventLoop()`
+  冲刷事件循环后检查状态，不和定时器赛跑。它默认跑 20 轮零延迟定时器，约 25 毫秒；`setImmediate` 跑同样轮数只有约 1 毫秒。断言
+  promise 还没完成时用同一文件的 `isStillPending()`。只等到钩子被调用不算观察窗口，反向断言前要再冲刷一次。涉及时间
+  语义用 fake timers。`setTimeout(fn, 0)` 只是让出事件循环，可以用。`AbortSignal.timeout(scaledTimeout(ms))` 只用来给会卡住的
+  操作兜底，不用来等一段时间。
+- 只有跑在 fake timers 下的代码不受上一条限制。具体是用例回调里调用了 `vi.useFakeTimers()`，或者 describe 回调、函数或文件
+  自己的语句开了 fake timers（包括在 `beforeEach` / `beforeAll` 里开）。同一个文件里用真实时钟的用例照样检查。在 helper 里开
+  fake timers 时 lint 看不到，要在用例或 hook 里显式调用。不要为了绕过规则而开 fake timers。
+- 耗时的下限（机器越忙只会越长）可以用两个记录下来的时间戳相减来断言。只打印耗时的 benchmark 在根目录 `.eslintrc.js` 里按文件
+  豁免，`test/helpers/time-budget.ts` 也是这样豁免的。本包行内 `eslint-disable` 的预算只有 3 条，已经用满。
+- 有几种写法 lint 认不出来，写之前先换成顺序断言或 fake timers。一种是两个在别处记录的时间戳相减再断言上限，一种是在 helper 里
+  量好耗时再返回，一种是给被测代码传很短的真实截止时间，又期望它在时限内完成，还有一种是用例调用 `vi.useRealTimers()` 之后再 sleep。
+- fake timers 下的 `waitFor` 每次检查前都会把 fake 时钟推进一个 interval，推进多少取决于真实等了多久。被测代码的定时器落在这个
+  范围内时，结果就取决于机器快慢。这时改成用 `vi.advanceTimersByTimeAsync` 显式推进，或者把定时器设到轮询推不到的范围。
+- 测试不设 `retry`，不监听固定端口。反复失败的测试按 `ci/quarantine.json` 的流程隔离。
+- mock 返回 `Response` 时，每次调用都新建一个，写成 `mockImplementation(async () => new Response(...))`，只调用一次的用
+  `mockResolvedValueOnce`。Response 的 body 只能读一次，`mockResolvedValue(new Response(...))` 让之后每次调用都拿到读完的
+  body，被测代码会走报错、重试或退避分支，测的就不是原本的路径。`test/unit/infra/logging/logger.test.ts` 曾因此让安审每次都
+  报本地错误，每个用例多等 4-10 秒随机退避。lint 拒绝把 `new Response(...)` 或 `Response.json(...)` 直接传给
+  `mockResolvedValue` / `mockReturnValue`。
+- 不等生产代码里写死的长时长，也不为了走到上限分支真的造出上限规模的数据。前台 Bash 的 60 秒 soft yield、ZIP64 的 65,535
+  条目阈值这类值，通过已有参数或标了 `@internal` 的测试接缝传一个小值，默认值另外断言。lint 认不出这两种写法，评审时要看。
+- 单元测试不真起 Runtime Host。`src/**/*.test.ts` 和 `test/unit` 里调用 `createLocalRuntimeHostV2*` 时必须 mock 掉
+  `services.js`，真起 Host 的测试放在 `test/integration`。
+- 每个测试从零跑一遍数据库迁移不受限制，安静的机器上实测一次约 42 毫秒，不是瓶颈。
+
 ## Persistence
 
 - 修改 persistence 前先阅读 `.harness/docs/design/db/v2-db-architecture.md` 与

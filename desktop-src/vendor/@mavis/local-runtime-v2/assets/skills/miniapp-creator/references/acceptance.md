@@ -50,6 +50,12 @@ Do not fabricate screenshots or report PASS.
 - For theme switching, filters, overlays, forms, or primary actions, perform a representative
   interaction and repeat `inspect` or `query` to verify a visible change. If theme switching exists,
   check text, controls, and boundaries in both light and dark themes.
+- For lists and editable data, exercise empty → non-empty → filtered/empty states. Confirm the
+  empty placeholder and confirmation overlay are absent when not applicable. Use both page
+  inspection and a screenshot; assigning `element.hidden = true` is not proof of invisibility
+  when component CSS overrides it. Preserve `[hidden] { display: none !important; }` where needed.
+- For persistent local data, add a synthetic item, reload the opened page, and verify the same item
+  remains. Remove only the test item afterward. Do not use real business writes as test data.
 - Controls are keyboard-accessible, have visible focus and an `aria-label` or visible name.
   State must not be conveyed by color alone.
 
@@ -96,10 +102,14 @@ Record each item as `PASS`, `FAIL`, or `UNVERIFIED`, keeping minimal evidence: p
 representative interaction results, relevant console/network summaries, and screenshot availability.
 
 - If a required check fails, edit only the workspace package returned by the current `miniapp.init`,
-  publish again, then repeat `inspect`, `open`, and this acceptance flow. Do not edit private copies
+  publish again, then repeat `inspect`, `open`, and this acceptance flow. Perform at most one
+  automatic repair cycle per creation request; if it still fails, preserve the package, report the
+  failed check and ask the user in the conversation before spending more on another repair. Do not edit private copies
   of the accepted package to bypass acceptance.
 - If only the Browser surface or an external dependency is unavailable, mark `UNVERIFIED` and
   report the blocker and uncovered risk. Do not repeatedly retry calls whose prerequisites remain
   unmet.
+- Publication and process readiness alone are not UI acceptance. Never deliver the initialization
+  scaffold as a completed application.
 - Claim Mini App UI acceptance only after all required checks PASS. Continue reporting unverified
   data access, external dependencies on the local machine, or user manual-test paths.

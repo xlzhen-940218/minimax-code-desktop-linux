@@ -12,8 +12,9 @@ MCP 继续使用本文的 `mcp_invoke` 链路；内置按需工具复用同一�
 
 | 职责 | 当前 owner |
 | --- | --- |
-| runtime 无关的规划、索引、检索与调用 | `packages/agent-tools/src/mcp-disclosure/` |
-| Turn 工具目录、选项解析、提示与诊断 | `packages/local-runtime-v2/src/service/turn-system/agent-host/assembly/local-turn-tool-catalog.ts`（`buildLocalTurnToolCatalog` / `resolveLocalMcpDisclosureOptions`） |
+| runtime 无关的规划、索引、检索、调用、选项解析（`resolveMcpDisclosureOptions`）、会话状态与请求插入 | `packages/agent-tools/src/mcp-disclosure/` |
+| Turn 工具目录、提示与诊断 | `packages/local-runtime-v2/src/service/turn-system/agent-host/assembly/local-turn-tool-catalog.ts`（`buildLocalTurnToolCatalog`） |
+| 云端接线 | `packages/cloud-runtime/src/session/tool-loading.ts`（`buildCloudToolLoadingCatalog`），见 cloud-runtime README |
 | MCP 工具来源与 runtime tool 枚举 | `packages/local-runtime-v2/src/service/mcp/tools/runtime-tools.ts`（`listMcpRuntimeToolEntriesForTurn`） |
 | 模型身份与上下文窗口解析 | `packages/local-runtime-v2/src/service/model-system/resolution/local-model-resolver.ts` |
 
@@ -121,7 +122,7 @@ export interface McpDisclosureOptions {
   topKMax: number;                   // 默认 20
   systemHint: boolean;               // 默认 true
   maxSchemaTextLen: number;          // 单工具 schemaText 上限（防御超大 schema），默认 4096
-  estimateTokens?: (def: ToolDefinition) => number; // 默认 JSON.stringify(def).length/4
+  estimateTokens?: (def: ToolDefinition) => number; // 默认 estimateToolDefinitionTokens：ASCII 字符 / 4 + 每个非 ASCII 字符 1 个
 }
 
 export interface McpModelIdentity { provider: string; id: string; contextWindow: number }
@@ -153,10 +154,11 @@ export function planMcpDisclosure(input: {
 1. `enabled=false` 或 `modelInWhitelist=false` → `{ deferred:false, inlineTools: 全部 MCP }`。
 2. `candidates = entries.filter(e => e.source === 'configured')`。
 3. `cost = Σ estimateTokens(e.tool.def)`（schemaText 受 `maxSchemaTextLen` 截断后估算）。
-4. `deferred = candidates.length >= minDeferCount && (candidates.length > MAX_INLINE_CONFIGURED_TOOLS || cost > thresholdPct * model.contextWindow)`。数量条件固定为 64，不依赖 `contextWindow`：插件 MCP 工具数量不设上限，大上下文窗口下仅按 token 判断会把上百个工具内联，超出 OpenAI 兼容接口 128 个 function 的限制。`contextWindow` 无效时只关闭 token 条件。
+4. `deferred = candidates.length >= minDeferCount && (candidates.length > MAX_INLINE_CONFIGURED_TOOLS || cost > thresholdPct * model.contextWindow)`。数量条件固定为 64，不依赖 `contextWindow`：插件 MCP 工具数量不设上限，大上下文窗口下仅按 token 判断会把上百个工具内联，超出 OpenAI 兼容接口 128 个 function 的限制。`contextWindow` 无效时只关闭 token 条件。当前实现：非 PTC 回合默认用固定预算 `deferBudgetTokens`（27,500；窗口有效时取它与 `thresholdPct * model.contextWindow` 的较小值，窗口无效时只用预算，依据与优先级见 `src/service/turn-system/agent-host/README.md` 的 Tool Search 段落），PTC 回合仍按本式。
 5. `deferred=false` → 全部内联；`deferred=true` → `inlineTools = 非 configured`，`buildIndex(candidates)`，`deferredRegistry`，`systemHintBlock`。
+6. 前缀窗口（二期，`window.ts`）：带会话窗口（`window` 输入）且 Tool Search 对该模型生效时，以上 1–5 只在窗口第一轮（会话开始或压缩提交后）执行，结果冻结为窗口快照：内联候选及其声明、目录条目、自动决定；快照要等该轮有请求得到 provider 回答才生效（`createToolSearchResponseHook`）；被拒、或在首个 token 前停止的回合不冻结窗口。窗口内后续轮次按快照分类：快照内联的仍内联（定义变了则重开窗口），其余候选一律推迟（新增工具不进声明，写进下一轮用户消息的可用性通知；每条通知写出相对冻结快照的完整偏差并取代此前通知，偏差变了就再发），快照里消失的工具保留声明、调用返回“not available in this session right now”；选项、PTC 模式或模型变化也重开窗口。窗口只在进程内，压缩提交时结束。行为与理由见 `src/service/turn-system/agent-host/README.md` 的 Tool Search 段落。
 
-**白名单匹配** `modelInWhitelist(provider, id, list)`：对每个 pattern 以 `${provider}/${id}` 做匹配，支持：精确、`provider/*` 前缀、`*` 通配（glob：`*` → `.*` 的简单实现，避免引库）。空 list ⇒ 不命中（功能默认关闭，安全）。
+**白名单匹配** `modelInWhitelist(provider, id, list)`：对每个 pattern 以 `${provider}/${id}` 做匹配，支持：精确、`provider/*` 前缀、`*` 通配（glob：`*` → `.*` 的简单实现，避免引库）。空 list ⇒ 不命中：显式 `[]` 停掉 MCP 工具的自动推迟（显式按需工具照旧推迟并进目录）；未配置时默认 `['*']`，所有模型命中。
 
 ### 4.3 检索索引（`index.ts`）
 
@@ -200,6 +202,11 @@ Type.Object({
 ```
 
 - `impl`：校验「`query`/`regex` 至少给一个」（否则结构化 error）；非法 `regex` → 结构化 error（提示修正，不抛异常）；`top_k` clamp 到 `[1, topKMax]`；调用 `index.search`，返回 `{ hits: [{name, description, input_schema, score}], total }`（JSON 文本）。不触碰 `tools` 数组。
+
+现行实现是 `bounded-tool-search.ts`：入参另有 `offset`，结果按页返回
+`{ hits, total, returned, next_offset? }`，`total` 是真实总数，`query` 为 `mcp__<server>`
+时列出该 server 的工具（不依赖 `exactSelect`）。分页与目录规则见
+`src/service/turn-system/agent-host/README.md`。
 
 ### 4.5 `mcp_invoke` 工具（`mcp-invoke.ts`，泛型 over TCtx）
 
@@ -246,13 +253,19 @@ interface LocalRuntimeConfig {
   // ...
   mcpToolSearch?: {
     enabled?: boolean;          // 默认 true
-    modelWhitelist?: string[];  // 默认 []
-    thresholdPct?: number;      // 默认 0.15
+    modelWhitelist?: string[];  // 默认 ['*']（所有模型）
+    thresholdPct?: number;      // 默认 0.15（PTC 回合；非 PTC 回合在没有生效的 deferBudgetTokens 时使用：配置了它，或预算配置为 ≤0）；窗口有效时也是非 PTC 预算的上限
     minDeferCount?: number;     // 默认 1
     topKDefault?: number;       // 默认 5
     topKMax?: number;           // 默认 20
     systemHint?: boolean;       // 默认 true
     maxSchemaTextLen?: number;  // 默认 4096
+    catalog?: boolean;          // 默认 true；唯一能去掉按需目录的开关
+    catalogBudgetTokens?: number; // 默认 2000；0 只留 server 名和工具数
+    exactSelect?: boolean;      // 默认 false
+    directCall?: boolean;       // 默认 false
+    deferBudgetTokens?: number; // 默认 27500（非 PTC 回合，未配 thresholdPct 时）；窗口有效时不超过 thresholdPct × 窗口；非正值关闭
+    carryAcrossCompaction?: boolean; // 默认 false
   };
 }
 ```

@@ -7,9 +7,9 @@ use the `miniApp` declaration with a `miniapp/` payload. The product name is **M
 
 Initialize the workspace package with `{ "action": "init", "pluginId": ... }` and edit only the
 returned workspace-relative `packagePath`. New packages use `miniapps/<pluginId>/`. The returned
-path is authoritative and remains a normal MiniMax Plugin package.
-`.minimax-plugin/plugin.json` is the source of truth for identity, metadata, icon, Skills, MCP
-servers, and apps; Mini App authoring does not reinterpret or clear those fields.
+path is authoritative and remains a normal MiniMax Plugin package. `.minimax-plugin/plugin.json` is
+the source of truth for identity, metadata, icon, Skills, MCP servers, and apps; Mini App authoring
+does not reinterpret or clear those fields.
 
 A new MiniMax Plugin manifest (`schemaVersion: 1`) contains these required fields (only
 `displayName` is optional):
@@ -111,8 +111,8 @@ The example above is the `miniapp/miniapp.json` format.
   `MINIAPP_MANIFEST_FIELD_UNSUPPORTED`.
 - `artifacts.client` and `artifacts.node` are non-empty, unique runtime payload digest roots. They
   define what the Host hashes and adopts; they are not required to be compiler output directories.
-  Roots may contain directly runnable source files or build outputs, and every path stays under
-  the package's `miniapp/` payload directory.
+  Roots may contain directly runnable source files or build outputs, and every path stays under the
+  package's `miniapp/` payload directory.
 - `runtime.entry` is the Node module entry, ends in `.js`, `.mjs`, or `.cjs`, and is covered by a
   Node payload root. Lifecycle is always `on-demand`; the field may be omitted. The retired
   `background` spelling is accepted as an `on-demand` compatibility input and never starts a service
@@ -259,3 +259,8 @@ A mixed stdio package's separate ordinary identity still includes `node_modules`
 Host omits that directory from the staged and published package. The Host does not maintain another
 authored-file blacklist for VCS metadata, virtual environments, coverage/cache data, IDE metadata,
 temporary files, logs, or PID files. Remove files that should not be adopted before publish.
+
+## 桌面展示
+
+当前 Mini App Pad 打开 `surface.path` 指向的完整页面，列表中的预览由宿主保存截图。创建应用时不生成
+`surface.widget`：当前 Pad 没有紧凑小组件入口，该字段也不被旧 Host 接受。页面应适配宿主窗口尺寸，避免依靠缩小整张网页制造预览。

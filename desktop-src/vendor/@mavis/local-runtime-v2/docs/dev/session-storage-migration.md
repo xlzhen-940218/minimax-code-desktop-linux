@@ -36,8 +36,9 @@ client 仍会按复制的绑定注册；新建任务、手动触发和启动后�
 
 普通 test 构建不包含 isolation 标记，继续使用源 dataDir 与正常 cold-start policy；`dev`、
 `staging`、`prod` 与未设置 build env 的启动也不启用该复制策略。该能力没有 UI 或 runtime
-开关。受管副本的具体路径、构建命令、排除项、并发指纹与 symlink 规则见
-`/openwiki/data-and-domains/local-state.md` 的 “显式 Test 构建 dataDir 隔离”。
+开关。受管副本的具体路径、构建命令、排除项、并发指纹与 symlink 规则以
+`apps/electron/main/modules/local-runtime/index.ts` 与
+`apps/electron/scripts/prepare-test-build-env.mjs` 实现为准。
 
 ## Version 5：Plugin 状态接管
 

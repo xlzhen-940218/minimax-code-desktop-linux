@@ -1,4 +1,6 @@
 import { defineConfig } from 'vitest/config';
+// The .ts extension lets Node load this config directly (type stripping does not map .js to .ts).
+import { scaledTimeout } from './test/helpers/time-scale.ts';
 
 export default defineConfig({
   test: {
@@ -14,7 +16,9 @@ export default defineConfig({
     exclude: ['**/node_modules/**', '**/dist/**', '**/*.e2e.integration.test.ts'],
     environment: 'node',
     globals: false,
-    testTimeout: 15_000,
+    // MAVIS_TEST_TIME_SCALE stretches these on busy CI runners; see test/helpers/time-scale.ts.
+    testTimeout: scaledTimeout(15_000),
+    hookTimeout: scaledTimeout(10_000),
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],
@@ -26,6 +30,7 @@ export default defineConfig({
         'src/http/generated/**',
         // Type-only contracts emit no runtime statements for V8 to instrument.
         'src/service/matrix/contracts.ts',
+        'src/service/plugin-system/plugin/marketplace/contracts.ts',
         'src/service/turn-system/agent-host/contracts.ts',
         'src/service/turn-system/agent-host/execution/contracts.ts',
         'src/service/turn-system/agent-host/history/contracts.ts',

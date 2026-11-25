@@ -244,8 +244,14 @@ initial provider request
 - 默认在首次请求后最多重试 5 次；采用 equal-jitter exponential backoff，尊重并钳制
   `Retry-After`，同时受单次 delay 和总 retry elapsed budget 限制。
 - 只允许连接 timeout、network failure、HTTP 429、TPM/RPM throttle 和 HTTP 529 /
-  overload 进入重试。Token Plan / usage limit、credits、auth、显式 abort、bad request、content
-  filter、generic 5xx 和 unknown failure 均 fail closed。
+  overload 进入重试。network 包括明确的 socket 断开码和 provider 提前 EOF 诊断（缺少
+  `message_stop` / `finish_reason` 等）；不把任意 `terminated` / `closed` 文本当网络故障。
+  provider 将异常压成文本前，通过已有 `onProviderError` 保留本次 attempt 的原始 cause 用于分类，
+  不公开裸异常，且不把它沿用到下一次 attempt。
+  Token Plan / usage limit、credits、auth、显式 abort、content filter 对所有 provider 均禁止重试。
+  managed provider 的 bad request、generic 5xx 和 unknown failure 仍 fail closed；BYOK 保留未知网关
+  错误的兼容回退，但不得覆盖上述终止错误、确定性请求拒绝和 context overflow，已识别的瞬态错误保留真实分类。
+- 取消检查覆盖每次 physical attempt 前的异步 accounting barrier；等待期间停止 turn 后不得继续发送请求。
 - provider native retry 固定为 0，避免 framework budget 与 SDK budget 叠加。
 - `composeStreamFn` 为每个 physical attempt 套首事件与空闲超时（`llm-stream-timeout.ts`），默认首事件 300 秒、空闲 60 分钟：
   首个 provider stream event 300 秒未到，或之后连续 60 分钟无事件时中止该 attempt。只有解析出的模型事件计入，SSE
@@ -266,6 +272,8 @@ initial provider request
   episode 的 transient 错误；若后续 attempt 变成不可重试错误， `exhausted.error` 的 reason / code /
   message 必须取最后一次 provider attempt。对应地， `pi_llm_retry_exhausted_total{reason}`
   按最终错误归因，而 `pi_llm_retry_episode_total{reason}` 始终保留首次触发重试的原因。
+  BYOK `retryAllErrors` 只放宽是否重试，reason 仍取 `toLLMRetryDecision` 的真实分类，可能是
+  allowlist 之外的 `LLMMetricErrorKind`（如 `server_error`）。
 
 重试指标按 physical attempt、logical call、retry
 episode 三层拆分，避免把额外请求次数误当成成功率分母：
@@ -276,6 +284,12 @@ episode 三层拆分，避免把额外请求次数误当成成功率分母：
 | `pi_llm_request_error_total` | 每个失败的 provider request            | 同上 + 有限枚举 `errorKind`                                 |
 | `pi_llm_logical_call_total`  | 每个 logical call 的最终终态           | 同上 + `scope` / `outcome` / `errorKind` / `retryTriggered` |
 | `pi_llm_retry_episode_total` | 实际触发过重试的 logical call 最终终态 | 同上 + `scope` / `reason` / `outcome`                       |
+| `pi_llm_offline_wait_total`  | 设备离线时的每次等待轮询               | 同上 + `scope`                                              |
+
+设备离线时的等待（`waitingFor: 'network'`）只计入 `pi_llm_offline_wait_total`，不计入 `pi_llm_retry_total`、
+`pi_llm_retry_delay_ms`，也不让 logical call 带上 `retryTriggered=true` 或计入 `pi_llm_retry_episode_total`，避免用户本地断网
+抬高服务侧的重试率告警。离线期间每次轮询仍是一次真实请求，照常计入 `pi_llm_request_total` 和
+`pi_llm_request_error_total`。
 
 - 原始 provider request 成功率继续使用既有 physical 指标：(`pi_llm_request_total` -
   `pi_llm_request_error_total`) /
@@ -290,11 +304,15 @@ episode 三层拆分，避免把额外请求次数误当成成功率分母：
 - `errorKind` 复用有限枚举错误分类，logical 成功统一写 `none`；不增加原始 status
   code、错误 message 或任何 session/turn/call ID label。
 
+指标形状也由宿主决定。`PiTurnRunnerOptions.registryMetrics` 打开时，runner 按 shared 指标登记表（`metric-registry.ts`）上报：上表的 `pi_llm_request_total`、`pi_llm_logical_call_total` 带上 `route`，还会上报首字、响应头和准备分段指标。不打开时保持登记表之前已上线的形状。当前 local-runtime 打开，cloud-runtime 不打开。宿主给出 `RunTurnInput.agentKind`（`bunny_main` 或 `bunny_task`）时，Pi 指标另带 `agentKind`，目前只有 local-runtime 的 Bunny 轮次会给。口径见 `.harness/docs/local-runtime-observability.md` 第 10 节。
+
 ### 4.3 宿主发起的 PTC 子调用
 
 `ToolConfig.tools` 是模型可见目录，`ToolConfig.ptcTools` 是宿主显式提供的子调用授权目录。两者分开保存；缺少后者时不提供隐式回退。`pi-turn-runner/ptc-tool-executor.ts` 只接受当前 pending 的真实 `run_code` 父调用，通过 vendored Pi 的共享单次生命周期执行子工具，保留参数准备、原 hooks、真实来源、取消及进度。Worker、工具分类和产品开关都由 Runtime 提供，core 不依赖解释器或 Desktop 实现。
 
 子调用使用宿主分配的 ID，经同一个串行事件出口携带 `parentToolCallId`；它们不写成模型发出的同级 tool call。子调用事件不经过 `agent.subscribe`，所以只有本 Turn 装配了 LLM capture 时，runner 才把 capture 转发器作为 `observeChildLifecycle` 交给 executor，在事件产生、进入串行出口之前同步通知；未装配时 executor 行为不变。PTC 父子事件的必需持久化失败必须传播，开始事实未确认前不能执行副作用。终态先生成安全投影，再发送附有 `details.ptc_child` 的展示副本；原工具结果与来宾结果不因此混入宿主审计字段。
+
+展示副本只从这一处产出，所以宿主可以在这里给它设上限：`PtcToolExecutorOptions.shapePtcChildDisplayResult`（类型 `PtcChildDisplayResultShaper`，`tools/ptc.ts`）在终态事件发出前作用于这份副本，经 `ToolExecutionContext.shapePtcChildDisplayResult` 由 `pi-turn-runner.ts` 从 `toolConfig.context` 读出并传入，与 `ptcResultProjection` 同一条注入路径。钩子只看到展示副本：程序拿到的值、来宾投影和模型可见结果都不经过它，所以宿主能把子调用写进会话历史的体积限住，而不改变程序收到什么。钩子抛错时记一条 `ptc child display copy shaping failed` warn 并发出未处理的展示副本，本次子调用结果不受影响；没注入钩子时行为与之前完全一致。
 
 `tools/ptc.ts` 定义外层与子调用事实的共同契约和严格读取函数，Goal、压缩与恢复从该契约消费真实记录，不解析 JS 或模型文本。用户拒绝编排中的审批只让该子调用失败（`PTC_PERMISSION_DENIED`），不是控制状态，程序继续执行；插件终止 Agent 只能在本轮真正的 PTC 父调用上提升为严格终止，不改变原生工具批次的终止语义。
 
@@ -322,6 +340,10 @@ beforeLlmCallHook
   appendMessage / respond / abort。appendMessage 只接受隐藏的 typed custom message，且不结束 decision
   pipeline：marker 按注册顺序累积，立即进入后续 hook 的 `messages`（tail marker 在末尾，
   `before-current-user` marker 在当前真实 user 之前）和 `canonicalMessages`，后续 hook 照常执行。
+  placement 在 request 里定位当前 user 不依赖 durable 下标（request-only hook 可能插入、删除或改写消息）：
+  先按对象身份（初始 user 或 compaction 副本）；再按内容与时间戳匹配 durable 之外的克隆；durable 仍含当前
+  user 时，只认最新摘要之后、request 最后一条非 custom 消息且不在 durable 中的 user 为其改写（request-only
+  改写留在 request；目录等 request-only user 标记不会被当成当前 user）。同一对象重复出现仍 fail-closed。
   所有 hook 结束后，PiTurnRunner 先做至多一次 durable replace（含 placed marker；afterCommit 消息排在
   所有 tail marker 之前），再按顺序追加全部 tail marker 并只 flush 一次 history，失败即 fail-closed。
   已登记 append 之后出现 durable `replaceMessages` 会 abort（生产顺序是 compaction 先于所有 append

@@ -299,11 +299,11 @@ The official desktop app ships for macOS and Windows only. This repository adds 
 [Download the Linux build](https://github.com/xlzhen-940218/minimax-code-linux-arm64/releases/latest) from the latest release, then install it:
 
 ```bash
-sudo apt install ./minimax-code_3.1.13_arm64.deb
+sudo apt install ./minimax-code_3.1.16_arm64.deb
 minimax-code
 ```
 
-The release publishes an `arm64` Debian package verified on Debian 13 with MiniMax Code 3.1.13 and Electron 42.11.16; `x64` packages are built the same way with `--arch x64` on an x64 host. To build or update it yourself, follow [desktop/README.md](desktop/README.md).
+The release publishes an `arm64` Debian package verified on Debian 13 with MiniMax Code 3.1.16 and Electron 42.11.16; the `x64` package is cross built from the same host with `--arch x64 --cross`. To build or update it yourself, follow [desktop/README.md](desktop/README.md).
 
 If you want to read or patch the application itself, use [desktop-src/](desktop-src/): the unpacked app as an editable npm workspace, with the pinned dependency manifests and the script that downloads Electron and recompiles the native modules. `./scripts/setup.sh` then `./run.sh` runs it on Linux. That tree is a verbatim snapshot of the shipped bundle and is not part of this repository's reviewed source inventory; see `AGENTS.md`.
 

@@ -50,9 +50,9 @@
     "npm-shrinkwrap.json"
   ],
   "dependencies": {
-    "@earendil-works/pi-agent-core": "file:../pi-agent-core",
-    "@earendil-works/pi-ai": "file:../pi-ai",
-    "@earendil-works/pi-tui": "file:../pi-tui",
+    "@earendil-works/pi-agent-core": "0.79.1",
+    "@earendil-works/pi-ai": "0.79.1",
+    "@earendil-works/pi-tui": "0.79.10",
     "@silvia-odwyer/photon-node": "0.3.4",
     "chalk": "5.6.2",
     "cross-spawn": "7.0.6",

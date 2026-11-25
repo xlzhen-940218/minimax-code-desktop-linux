@@ -59,6 +59,14 @@ inside that service's native Board/View workflow. Ask whether the output should 
 App or a native service Board/View only for a bare ordinary request such as "make a Notion board"
 that describes no app behavior. Once the output is explicit, do not ask the same question again.
 
+### Create from an existing conversation
+
+When the user asks to turn an existing task or conversation into a Mini App, or supplies historical
+conversation reference material, first read [references/conversation-to-app.md](references/conversation-to-app.md).
+Apply its suitability checks, confirmation boundaries, and acceptance workflow together with Steps
+1–6 below. Creating from a conversation builds a new reusable product; it does not replay old actions
+or grant access to the source task's files, credentials, or tools.
+
 ### Discover requirements from the user's situation
 
 For a broad request such as "help me create a Mini App", explore before the first `ask_user`.

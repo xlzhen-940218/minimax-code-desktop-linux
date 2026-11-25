@@ -73,8 +73,8 @@ Native tool calls are platform-independent — the same call shape works on macO
   `references/session-and-communication.md`): `task_append({ task_id: "<taskId>", content: "..." })`
 - Deliver a message to an existing local session without waiting:
   `mavis({ command: "session send", args: { session_id: "<sessionId>", content: "Continue with the follow-up requirement." } })`
-- Ask and wait in one call — decide up front, because a second send is a new message, not a wait:
-  `mavis({ command: "session send", args: { session_id: "<sessionId>", content: "What did you conclude?", sync: true } })`
+- A local session that answers sends its answer back to you as a cross-session message; do not
+  poll it with `session messages` or send again to wait.
 - List current-profile MCP servers: `mavis({ command: "mcp list", args: {} })`
 - Inspect an MCP server: `mavis({ command: "mcp get", args: { name: "docs" } })`
 - Create an MCP server after the user explicitly requests or approves it:
