@@ -62,7 +62,16 @@ mkdir -p "$BUILD_DIR/installers" "$BUILD_DIR/cache"
 log "Reading MiniMax's update feed"
 FEED="$(curl -fsSL --retry 3 "$FEED_URL")" || die "Could not read $FEED_URL"
 VERSION="$(printf '%s\n' "$FEED" | sed -n 's/^version:[[:space:]]*//p' | head -1 | tr -d "\"' \r")"
-SETUP_NAME="MiniMax Code Setup $VERSION.exe"
+# The feed publishes one installer per architecture (`...-x64.exe`,
+# `...-arm64.exe`); releases before 3.1.17 shipped a single `... .exe`.
+SETUP_NAME=""
+for candidate in "MiniMax Code Setup $VERSION-$ARCH.exe" "MiniMax Code Setup $VERSION.exe"; do
+  if printf '%s\n' "$FEED" | grep -qF "$candidate"; then
+    SETUP_NAME="$candidate"
+    break
+  fi
+done
+[ -n "$SETUP_NAME" ] || die "The feed does not list an installer for $ARCH."
 EXPECTED_SHA512="$(printf '%s\n' "$FEED" | awk -v n="$SETUP_NAME" '
   index($0, "url:") && index($0, n) {hit=1; next}
   hit && /sha512:/ {sub(/.*sha512:[[:space:]]*/, ""); gsub(/["\047\r ]/, ""); print; exit}')"
@@ -73,7 +82,7 @@ if [ -z "$INSTALLER" ]; then
   INSTALLER="$BUILD_DIR/installers/$SETUP_NAME"
   if [ ! -f "$INSTALLER" ]; then
     log "Downloading the official installer"
-    curl -fL --retry 3 -o "$INSTALLER.part" "$CDN_BASE/MiniMax%20Code%20Setup%20$VERSION.exe"
+    curl -fL --retry 3 -o "$INSTALLER.part" "$CDN_BASE/${SETUP_NAME// /%20}"
     mv "$INSTALLER.part" "$INSTALLER"
   fi
 fi
