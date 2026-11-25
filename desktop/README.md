@@ -19,6 +19,8 @@ application and a Debian package.
 - Login, the task workspace, the embedded terminal, and native modules were tested.
 - The `x64` package is cross built from the same arm64 host; see
   [Cross building](#cross-building).
+- Also verified on Zorin OS 18.1 (Ubuntu 24.04 base), x64, with MiniMax Code 3.1.14 and
+  Electron 42.11.16: build, login and the model list were tested.
 - The build is not published or supported by MiniMax. MiniMax Code itself stays
   proprietary and is subject to MiniMax's terms of service.
 
@@ -122,6 +124,27 @@ The cross compiler is taken from the target triple (`x86_64-linux-gnu-g++`), and
 Electron runtime and the platform packages, is downloaded for the target
 architecture.
 
+### Verified build from official sources
+
+`desktop/build-linux-verified.sh` fetches every input itself and checks it before
+building, for anyone who wants an auditable build without mirrors:
+
+- the MiniMax installer from `file.cdn.minimax.io`, checked against the sha512 in
+  MiniMax's own update feed (`latest.yml`);
+- the Electron runtime and headers from the official GitHub release and
+  `artifacts.electronjs.org`, checked against Electron's `SHASUMS256.txt`;
+- npm packages from `registry.npmjs.org`, with `ELECTRON_MIRROR` set to an invalid
+  host so no mirror is used.
+
+```bash
+./desktop/build-linux-verified.sh --portable
+```
+
+It stops on any checksum mismatch, refuses to run as root, picks the architecture
+from the host, and writes `desktop/dist/SHA256SUMS-<version>.txt` for the outputs.
+Pass `--installer <path>` to reuse an installer you already downloaded; it is still
+checked against the current feed.
+
 ### Updating to a new MiniMax Code release
 
 1. Download the matching official Windows installer.
@@ -204,6 +227,7 @@ Logs are written to `~/.config/MiniMax/logs/`.
 ```text
 desktop/
 ├── build-linux.sh              # build entry point
+├── build-linux-verified.sh     # official-sources-only wrapper with checksum checks
 ├── dist/                       # generated packages (not committed)
 ├── assets/
 │   ├── icon.png                # 256x256 application icon
